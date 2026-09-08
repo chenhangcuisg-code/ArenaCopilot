@@ -65,7 +65,7 @@ namespace HdtArenaHelper.Tests
 		}
 
 		private const string RealAssetUrl =
-			"https://github.com/dokson/HdtArenaHelper/releases/download/v0.1.2/HdtArenaHelper.dll";
+			"https://github.com/chenhangcuisg-code/ArenaCopilot/releases/download/v0.1.2/HdtArenaHelper.dll";
 
 		[Fact]
 		public void SelectDllAssetUrl_finds_the_bare_dll_by_exact_name()
@@ -73,7 +73,7 @@ namespace HdtArenaHelper.Tests
 			var release = JObject.Parse(@"{
 				""tag_name"": ""v0.1.2"",
 				""assets"": [
-					{ ""name"": ""HdtArenaHelper-0.1.2.zip"", ""browser_download_url"": ""https://github.com/dokson/HdtArenaHelper/releases/download/v0.1.2/x.zip"" },
+					{ ""name"": ""HdtArenaHelper-0.1.2.zip"", ""browser_download_url"": ""https://github.com/chenhangcuisg-code/ArenaCopilot/releases/download/v0.1.2/x.zip"" },
 					{ ""name"": ""HdtArenaHelper.dll"",       ""browser_download_url"": """ + RealAssetUrl + @""" }
 				]
 			}");
@@ -85,14 +85,14 @@ namespace HdtArenaHelper.Tests
 		{
 			var release = JObject.Parse(@"{
 				""assets"": [
-					{ ""name"": ""HdtArenaHelper-0.1.2.zip"", ""browser_download_url"": ""https://github.com/dokson/HdtArenaHelper/releases/download/v0.1.2/x.zip"" }
+					{ ""name"": ""HdtArenaHelper-0.1.2.zip"", ""browser_download_url"": ""https://github.com/chenhangcuisg-code/ArenaCopilot/releases/download/v0.1.2/x.zip"" }
 				]
 			}");
 			Assert.Null(SelfUpdater.SelectDllAssetUrl(release));
 		}
 
 		[Theory]
-		[InlineData("https://github.com/dokson/HdtArenaHelper/releases/download/v1/HdtArenaHelper.dll", true)]
+		[InlineData("https://github.com/chenhangcuisg-code/ArenaCopilot/releases/download/v1/HdtArenaHelper.dll", true)]
 		[InlineData("https://github.com/attacker/HdtArenaHelper/releases/download/v1/HdtArenaHelper.dll", false)] // another repo
 		[InlineData("https://github.com/dokson/HdtArenaHelper/issues/1", false)]                                  // not a release path
 		[InlineData("https://objects.githubusercontent.com/foo", true)]

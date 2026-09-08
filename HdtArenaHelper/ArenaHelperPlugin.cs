@@ -28,13 +28,12 @@ namespace HdtArenaHelper
 	/// </summary>
 	public class ArenaHelperPlugin : IPlugin
 	{
-		public string Name => "Arena Helper";
+		public string Name => "Arena Copilot";
 		public string Description =>
-			"Open-source arena draft helper. Blends free public card-winrate data " +
-			"into a single 0-100 score per pick, with deck synergy. Uses no paid " +
-			"or scraped data.";
+			"Arena draft, mulligan, Discover, and optional Codex turn advice. " +
+			"Codex uses your signed-in ChatGPT plan quota; no API key is required.";
 		public string ButtonText => "Refresh data";
-		public string Author => "Alessandro Colace";
+		public string Author => "Alessandro Colace; chenhangcuisg-code";
 		// Version.props is the single source of truth; read it back from the assembly
 		// so a release bump cannot drift from what this property reports.
 		public Version Version
@@ -67,6 +66,15 @@ namespace HdtArenaHelper
 		private readonly MetadataSynergyEngine _synergy = new MetadataSynergyEngine();
 		private volatile ScoreAggregator? _aggregator;
 		private ArenaOverlayWindow? _overlay;
+		private CodexAdvisorService? _codex;
+		private PlayAdvisor? _playAdvisor;
+		private bool _codexEnabled;
+		private bool _codexPrefLoaded;
+		private Task<AdvisorResponse>? _draftAiTask;
+		private string? _draftAiRequestKey;
+		private string? _currentDraftPickKey;
+		private string _optionAdviceTitle = "CODEX";
+		private int _draftRunSerial;
 		private MenuItem? _menuItem;
 		private bool _enabled = true;
 
@@ -109,7 +117,7 @@ namespace HdtArenaHelper
 		private int _renderedSources;                // LoadedSourceCount the overlay was built with
 
 		private static string CacheDir =>
-			Path.Combine(Config.AppDataPath, "ArenaHelper");
+			Path.Combine(Config.AppDataPath, "ArenaCopilot");
 
 		public void OnLoad()
 		{
@@ -143,6 +151,7 @@ namespace HdtArenaHelper
 
 				// Created here on HDT's UI thread; all overlay access stays on this thread.
 				_overlay = new ArenaOverlayWindow();
+				InitCodexAdvisor();
 
 				// This plugin owns the arena overlay: suppress HDT's built-in one.
 				SuppressNativeArenaOverlay();
@@ -189,6 +198,14 @@ namespace HdtArenaHelper
 			_mulliganWatcher.OnMulliganGone -= OnMulliganGone;
 			_opponentWatcher.OnOpponentIdentified -= OnOpponentIdentified;
 			_opponentWatcher.OnOpponentGone -= OnOpponentGone;
+			if(_playAdvisor != null)
+			{
+				_playAdvisor.AdviceReady -= OnPlayAdviceReady;
+				_playAdvisor.AdviceGone -= OnPlayAdviceGone;
+			}
+			_codex?.Dispose();
+			_codex = null;
+			_playAdvisor = null;
 			// Abandon any in-flight update check before the DLL stops being ours to swap.
 			try { _updateCts?.Cancel(); }
 			catch(Exception ex) { Log.Error("[ArenaHelper] update cancel failed: " + ex.Message); }
@@ -217,6 +234,8 @@ namespace HdtArenaHelper
 				_choiceWatcher.Poll(); // fires OnCardChoiceChanged / OnCardChoiceGone on this thread
 				_mulliganWatcher.Poll(); // fires OnMulliganChanged / OnMulliganGone on this thread
 				_opponentWatcher.Poll(); // fires OnOpponentIdentified / OnOpponentGone on this thread
+				_playAdvisor?.Poll(_codexEnabled && _overlayState.ActiveScreen == null);
+				PollDraftAdvice();
 				PollLocalArenaRating();
 
 				var screen = _overlayState.ActiveScreen;
@@ -408,7 +427,7 @@ namespace HdtArenaHelper
 				if(_menuItem != null)
 					return _menuItem;
 
-				_menuItem = new MenuItem { Header = "Arena Helper" };
+				_menuItem = new MenuItem { Header = "Arena Copilot" };
 
 				var toggle = new MenuItem { Header = "Enabled", IsCheckable = true, IsChecked = true };
 				toggle.Click += (_, __) =>
@@ -437,6 +456,33 @@ namespace HdtArenaHelper
 				var refresh = new MenuItem { Header = "Refresh data now" };
 				refresh.Click += (_, __) => OnButtonPress();
 				_menuItem.Items.Add(refresh);
+
+				EnsureCodexPref();
+				var codex = new MenuItem
+				{
+					Header = "Codex AI advisor (uses plan quota)",
+					IsCheckable = true,
+					IsChecked = _codexEnabled
+				};
+				codex.Click += (_, __) =>
+				{
+					_codexEnabled = codex.IsChecked;
+					SaveCodexPref(_codexEnabled);
+					if(_codexEnabled)
+						InitCodexAdvisor();
+					else
+					{
+						_playAdvisor?.Reset();
+						_overlayState.AdvisorGone();
+						_overlay?.SetAdvisor(null);
+					}
+					Log.Info($"[ArenaHelper] Codex advisor = {_codexEnabled}");
+				};
+				_menuItem.Items.Add(codex);
+
+				var login = new MenuItem { Header = "Codex: sign in / check account" };
+				login.Click += async (_, __) => await CheckCodexAccountAsync().ConfigureAwait(true);
+				_menuItem.Items.Add(login);
 
 				// Read the pref before building the checkbox, for the same reason auto-update does:
 				// the menu can be built before OnLoad, and a checkbox showing the default instead of
@@ -639,7 +685,7 @@ namespace HdtArenaHelper
 			var menu = _menuItem;
 			if(menu == null)
 				return;
-			void Apply() => menu.Header = "Arena Helper — update ready";
+			void Apply() => menu.Header = "Arena Copilot — update ready";
 			if(menu.Dispatcher.CheckAccess())
 				Apply();
 			else
@@ -707,6 +753,38 @@ namespace HdtArenaHelper
 
 		private string AutoUpdatePrefFile => Path.Combine(CacheDir, "auto_update.pref");
 
+		private string CodexPrefFile => Path.Combine(CacheDir, "codex_ai.pref");
+
+		private void EnsureCodexPref()
+		{
+			if(_codexPrefLoaded)
+				return;
+			_codexPrefLoaded = true;
+			try
+			{
+				if(File.Exists(CodexPrefFile)
+					&& bool.TryParse(File.ReadAllText(CodexPrefFile).Trim(), out var value))
+					_codexEnabled = value;
+			}
+			catch(Exception ex)
+			{
+				Log.Error("[ArenaHelper] Codex pref read failed: " + ex.Message);
+			}
+		}
+
+		private void SaveCodexPref(bool value)
+		{
+			try
+			{
+				Directory.CreateDirectory(CacheDir);
+				File.WriteAllText(CodexPrefFile, value ? "true" : "false");
+			}
+			catch(Exception ex)
+			{
+				Log.Error("[ArenaHelper] Codex pref write failed: " + ex.Message);
+			}
+		}
+
 		private bool LoadAutoUpdatePref()
 		{
 			try
@@ -719,7 +797,7 @@ namespace HdtArenaHelper
 			{
 				Log.Error("[ArenaHelper] auto-update pref read failed: " + ex.Message);
 			}
-			return true; // default: keep users on the latest fixes unless they opt out
+			return false; // no release channel is assumed for a newly installed fork
 		}
 
 		private void SaveAutoUpdatePref(bool value)
@@ -745,6 +823,11 @@ namespace HdtArenaHelper
 			_mulliganWatcher.Reset();
 			_opponentWatcher.Reset();
 			_overlayState.Reset();
+			_playAdvisor?.Reset();
+			_overlay?.SetAdvisor(null);
+			_draftAiTask = null;
+			_draftAiRequestKey = null;
+			_currentDraftPickKey = null;
 			_renderedScreen = null;
 			_renderedReady = false;
 			_renderedSources = 0;
@@ -754,6 +837,7 @@ namespace HdtArenaHelper
 		{
 			// One field, so a pick REPLACES a deck-edit rather than having to remember to clear it.
 			_overlayState.Show(e);
+			_currentDraftPickKey = DraftPickKey(e);
 			Log.Info($"[ArenaHelper] choices changed: {e.Offered.Count} offered, " +
 				$"{e.DraftedDbfIds.Count} drafted, underground={e.IsUnderground}");
 		}
@@ -761,6 +845,7 @@ namespace HdtArenaHelper
 		private void OnRunSummaryChanged(object sender, RunSummaryEventArgs e)
 		{
 			_overlayState.Show(e);
+			_playAdvisor?.SetDeck(e.DeckDbfIds);
 			LogLocalArenaRating();
 			StartLeaderboardCrawlForArenaScreen(e.IsUnderground);
 		}
@@ -1102,6 +1187,10 @@ namespace HdtArenaHelper
 		private void OnDraftEnded(object sender, EventArgs e)
 		{
 			_overlayState.DraftEnded();
+			_draftRunSerial++;
+			_currentDraftPickKey = null;
+			_overlayState.AdvisorGone();
+			_overlay?.SetAdvisor(null);
 			Log.Info("[ArenaHelper] draft ended");
 		}
 
@@ -1129,6 +1218,9 @@ namespace HdtArenaHelper
 		private void OnArenaScreenLeft(object sender, EventArgs e)
 		{
 			_overlayState.ArenaScreenLeft();
+			_currentDraftPickKey = null;
+			_overlayState.AdvisorGone();
+			_overlay?.SetAdvisor(null);
 			_overlay?.SetOwnRating(null);
 			Log.Info("[ArenaHelper] arena screens left; panels dropped");
 		}
@@ -1152,14 +1244,25 @@ namespace HdtArenaHelper
 			return $"[{parts}]{syn}";
 		}
 
-		private void OnCardChoiceChanged(object sender, CardChoiceEventArgs e) => _overlayState.Show(e);
+		private void OnCardChoiceChanged(object sender, CardChoiceEventArgs e)
+		{
+			_overlayState.Show(e);
+			_currentDraftPickKey = "choice:" + string.Join(",", e.OfferedDbfIds);
+		}
 
 		private void OnCardChoiceGone(object sender, EventArgs e)
-			=> _overlayState.Clear<CardChoiceEventArgs>();
+		{
+			_overlayState.Clear<CardChoiceEventArgs>();
+			_currentDraftPickKey = null;
+			_overlayState.AdvisorGone();
+			_overlay?.SetAdvisor(null);
+		}
 
 		private void OnMulliganChanged(object sender, MulliganEventArgs e)
 		{
 			_overlayState.Show(e);
+			_playAdvisor?.SetDeck(e.DeckDbfIds);
+			_currentDraftPickKey = "mulligan:" + string.Join(",", e.HandDbfIds);
 			LogOpponentHeroPower();
 		}
 
@@ -1213,7 +1316,13 @@ namespace HdtArenaHelper
 				+ $"2 health={HeroPowerThreat.KillsForFree(card, 2)}");
 		}
 
-		private void OnMulliganGone(object sender, EventArgs e) => _overlayState.Clear<MulliganEventArgs>();
+		private void OnMulliganGone(object sender, EventArgs e)
+		{
+			_overlayState.Clear<MulliganEventArgs>();
+			_currentDraftPickKey = null;
+			_overlayState.AdvisorGone();
+			_overlay?.SetAdvisor(null);
+		}
 
 		/// <summary>
 		/// Looks the opponent up on Blizzard's own arena leaderboard and logs whatever comes back.
@@ -1496,6 +1605,7 @@ namespace HdtArenaHelper
 			}
 
 			_overlay.SetMulligan(entries);
+			StartMulliganAdvice(e, entries);
 			Log.Info($"[ArenaHelper] rendered mulligan: {entries.Count} cards, class={e.DeckClass}, " +
 				$"coin={e.OnCoin}, calls={entries.Count(x => x.Verdict.Verdict != MulliganVerdict.Situational)}");
 		}
@@ -1529,6 +1639,7 @@ namespace HdtArenaHelper
 			}
 
 			_overlay.SetEntries(entries, OverlayLayout.InGameChoice);
+			StartChoiceAdvice(e, entries);
 			Log.Info($"[ArenaHelper] rendered {entries.Count} in-game choices class={e.DeckClass}");
 		}
 
@@ -1571,6 +1682,7 @@ namespace HdtArenaHelper
 
 			_overlay.IsUnderground = e.IsUnderground;
 			_overlay.SetEntries(entries, isHeroPick ? OverlayLayout.HeroPick : OverlayLayout.CardDraft);
+			StartDraftAdvice(e, entries);
 			Log.Info($"[ArenaHelper] rendered {entries.Count} options heroPick={isHeroPick}");
 		}
 
@@ -1732,6 +1844,171 @@ namespace HdtArenaHelper
 				return dbfId.ToString();
 			}
 		}
+
+		private void InitCodexAdvisor()
+		{
+			EnsureCodexPref();
+			if(_codex != null)
+				return;
+			try
+			{
+				var assemblyDir = Path.GetDirectoryName(typeof(ArenaHelperPlugin).Assembly.Location) ?? CacheDir;
+				var strategyDir = Path.Combine(assemblyDir, "Strategy");
+				if(!Directory.Exists(strategyDir))
+				{
+					Directory.CreateDirectory(CacheDir);
+					strategyDir = CacheDir;
+				}
+				_codex = new CodexAdvisorService(strategyDir);
+				_playAdvisor = new PlayAdvisor(_codex);
+				_playAdvisor.AdviceReady += OnPlayAdviceReady;
+				_playAdvisor.AdviceGone += OnPlayAdviceGone;
+			}
+			catch(Exception ex)
+			{
+				Log.Error("[ArenaHelper] Codex advisor initialization failed: " + ex.Message);
+			}
+		}
+
+		private async Task CheckCodexAccountAsync()
+		{
+			InitCodexAdvisor();
+			if(_codex == null)
+				return;
+			try
+			{
+				var account = await _codex.ReadAccountAsync().ConfigureAwait(true);
+				if(account == null)
+				{
+					Log.Info("[ArenaHelper] Codex account not connected; opening ChatGPT login");
+					await _codex.BeginLoginAsync().ConfigureAwait(true);
+				}
+				else
+					Log.Info($"[ArenaHelper] Codex connected: {account.Type}, plan={account.PlanType}");
+			}
+			catch(Exception ex)
+			{
+				Log.Error("[ArenaHelper] Codex account check failed: " + ex.Message);
+			}
+		}
+
+		private void OnPlayAdviceReady(object sender, PlayAdviceEventArgs e)
+		{
+			_overlay?.SetAdvisor(e.Advice, e.Advice.IsLocalLethal ? "LOCAL LETHAL" : "CODEX — PLAY");
+			_overlayState.AdvisorShown();
+			Log.Info($"[ArenaHelper] play advice {e.Advice.Decision}, confidence={e.Advice.Confidence:0.00}, "
+				+ $"steps={e.Advice.Steps.Count}, local={e.Advice.IsLocalLethal}");
+		}
+
+		private void OnPlayAdviceGone(object sender, EventArgs e)
+		{
+			_overlayState.AdvisorGone();
+			_overlay?.SetAdvisor(null);
+		}
+
+		private void StartDraftAdvice(DraftChoicesEventArgs choices, IReadOnlyList<OverlayEntry> entries)
+		{
+			if(!_codexEnabled || _codex == null || choices.Offered.Count != 3 || entries.Count != 3
+				|| _draftAiTask != null)
+				return;
+			var key = DraftPickKey(choices);
+			if(key == _draftAiRequestKey)
+				return;
+			var options = new List<DraftAiOption>();
+			for(var i = 0; i < 3; i++)
+			{
+				options.Add(new DraftAiOption
+				{
+					Id = ((char)('A' + i)).ToString(),
+					DbfId = choices.Offered[i].DbfId,
+					Name = entries[i].Label,
+					Score = entries[i].Score.HasData ? entries[i].Score.Value : 0,
+					DeckFit = entries[i].Score.SynergyBonus,
+				});
+			}
+			_draftAiRequestKey = key;
+			_optionAdviceTitle = "CODEX — DRAFT";
+			_draftAiTask = _codex.AdviseDraftAsync(_draftRunSerial.ToString(),
+				choices.DraftClass.ToString(), choices.DraftedDbfIds, options);
+		}
+
+		private void StartChoiceAdvice(CardChoiceEventArgs choice, IReadOnlyList<OverlayEntry> entries)
+		{
+			if(!_codexEnabled || _codex == null || choice.OfferedDbfIds.Count != 3 || entries.Count != 3
+				|| _draftAiTask != null)
+				return;
+			var snapshot = SnapshotBuilder.TryBuild();
+			if(snapshot == null)
+				return;
+			var key = "choice:" + string.Join(",", choice.OfferedDbfIds);
+			if(key == _draftAiRequestKey)
+				return;
+			var options = new List<DraftAiOption>();
+			for(var i = 0; i < 3; i++)
+			{
+				options.Add(new DraftAiOption
+				{
+					Id = ((char)('A' + i)).ToString(),
+					DbfId = choice.OfferedDbfIds[i],
+					Name = entries[i].Label,
+					Score = entries[i].Score.HasData ? entries[i].Score.Value : 0,
+					DeckFit = entries[i].Score.SynergyBonus,
+				});
+			}
+			_draftAiRequestKey = key;
+			_optionAdviceTitle = "CODEX — DISCOVER";
+			_draftAiTask = _codex.AdviseChoiceAsync(snapshot.GameId, "Discover", snapshot, options);
+		}
+
+		private void StartMulliganAdvice(MulliganEventArgs mulligan, IReadOnlyList<MulliganOverlayEntry> entries)
+		{
+			if(!_codexEnabled || _codex == null || entries.Count == 0 || _draftAiTask != null)
+				return;
+			var key = "mulligan:" + string.Join(",", mulligan.HandDbfIds);
+			if(key == _draftAiRequestKey)
+				return;
+			var hand = new List<MulliganAiOption>();
+			for(var i = 0; i < entries.Count; i++)
+			{
+				hand.Add(new MulliganAiOption
+				{
+					Id = ((char)('A' + i)).ToString(),
+					DbfId = mulligan.HandDbfIds[i],
+					Name = entries[i].Label,
+					LocalRule = entries[i].Verdict.Verdict + ": " + entries[i].Verdict.Reason,
+				});
+			}
+			_draftAiRequestKey = key;
+			_optionAdviceTitle = "CODEX — MULLIGAN";
+			_draftAiTask = _codex.AdviseMulliganAsync(_draftRunSerial + ":" + mulligan.DeckClass,
+				mulligan.DeckClass.ToString(), mulligan.OnCoin, mulligan.DeckDbfIds, hand);
+		}
+
+		private void PollDraftAdvice()
+		{
+			var task = _draftAiTask;
+			if(task == null || !task.IsCompleted)
+				return;
+			_draftAiTask = null;
+			if(task.Status == TaskStatus.RanToCompletion && _currentDraftPickKey == _draftAiRequestKey)
+			{
+				_overlay?.SetAdvisor(task.Result, _optionAdviceTitle);
+				_overlayState.AdvisorShown();
+				Log.Info($"[ArenaHelper] draft advice {task.Result.Decision}, confidence={task.Result.Confidence:0.00}");
+			}
+			else
+			{
+				if(task.IsFaulted)
+					Log.Info("[ArenaHelper] Codex draft advice failed: " + task.Exception?.GetBaseException().Message);
+				// If the screen changed while this request was running, render the current
+				// choice again so it gets its own request even when the stale one failed.
+				if(_currentDraftPickKey != _draftAiRequestKey)
+					_renderedScreen = null;
+			}
+		}
+
+		private static string DraftPickKey(DraftChoicesEventArgs choices)
+			=> $"{choices.DraftedDbfIds.Count}:" + string.Join(",", choices.Offered.Select(x => x.DbfId));
 
 		private static string ResolveName(string cardId)
 		{

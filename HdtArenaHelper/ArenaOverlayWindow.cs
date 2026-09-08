@@ -150,6 +150,7 @@ namespace HdtArenaHelper
 		/// in both lifetime and placement — <see cref="SetRunSummary"/> clears <see cref="_cornerLayer"/> as
 		/// its reset, which would otherwise wipe whichever of the two was set first.</summary>
 		private readonly Grid _ratingLayer;
+		private readonly Grid _adviceLayer;
 		private bool _nativePlaqueUnavailable;
 		private bool _shownOnce;
 		private bool _visible;   // our own show/hide state, so the transition is loggable
@@ -185,10 +186,12 @@ namespace HdtArenaHelper
 			// whichever call happened to come second. Separate layers make the two independent of
 			// ordering, which is what "two independent panels" has to mean to be safe.
 			_ratingLayer = new Grid();
+			_adviceLayer = new Grid();
 			var root = new Grid();
 			root.Children.Add(viewbox);
 			root.Children.Add(_cornerLayer);
 			root.Children.Add(_ratingLayer);
+			root.Children.Add(_adviceLayer);
 			Content = root;
 
 			Loaded += (_, __) => MakeClickThrough();
@@ -534,6 +537,63 @@ namespace HdtArenaHelper
 		}
 
 		public void SetOwnRating(string? line) => SetStandings(line, null);
+
+		public void SetAdvisor(AdvisorResponse? advice, string title = "CODEX")
+		{
+			_adviceLayer.Children.Clear();
+			if(advice == null)
+				return;
+
+			var stack = new StackPanel();
+			stack.Children.Add(new TextBlock
+			{
+				Text = advice.IsLocalLethal ? "⚔ LETHAL — LOCAL" : title,
+				FontSize = 17,
+				FontWeight = FontWeights.Bold,
+				Foreground = advice.IsLocalLethal ? Brushes.OrangeRed : Brushes.LightSkyBlue,
+			});
+			stack.Children.Add(new TextBlock
+			{
+				Text = $"{advice.Decision}  ·  {Math.Round(advice.Confidence * 100)}%",
+				FontSize = 13,
+				Foreground = Brushes.White,
+				Margin = new Thickness(0, 2, 0, 7),
+			});
+			for(var i = 0; i < advice.Steps.Count; i++)
+				stack.Children.Add(AdviceLine($"{i + 1}. {advice.Steps[i]}", Brushes.White, 14));
+			if(advice.Reasons.Count > 0)
+			{
+				stack.Children.Add(AdviceLine("理由", Brushes.Silver, 12, 7));
+				foreach(var reason in advice.Reasons.Take(3))
+					stack.Children.Add(AdviceLine("• " + reason, Brushes.Gainsboro, 12));
+			}
+			if(!string.IsNullOrWhiteSpace(advice.Risk))
+				stack.Children.Add(AdviceLine("⚠ " + advice.Risk, Brushes.Khaki, 12, 7));
+
+			_adviceLayer.Children.Add(new Border
+			{
+				Background = new SolidColorBrush(Color.FromArgb(225, 8, 12, 18)),
+				BorderBrush = new SolidColorBrush(Color.FromArgb(190, 80, 150, 220)),
+				BorderThickness = new Thickness(1),
+				CornerRadius = new CornerRadius(8),
+				Padding = new Thickness(13, 10, 13, 11),
+				MaxWidth = 390,
+				Child = stack,
+				HorizontalAlignment = HorizontalAlignment.Right,
+				VerticalAlignment = VerticalAlignment.Center,
+				Margin = new Thickness(18),
+			});
+		}
+
+		private static TextBlock AdviceLine(string text, Brush colour, double size, double top = 2)
+			=> new TextBlock
+			{
+				Text = text,
+				FontSize = size,
+				Foreground = colour,
+				TextWrapping = TextWrapping.Wrap,
+				Margin = new Thickness(0, top, 0, 0),
+			};
 
 		/// <summary>
 		/// The standings panel: the player's own line, and the OPPONENT's beside it during a match. Either

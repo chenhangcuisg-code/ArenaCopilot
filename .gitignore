@@ -32,6 +32,8 @@ hsreplay_*.json
 
 # CI: pinned HDT reference assemblies downloaded by scripts/resolve-hdt.ps1
 /.hdt/
+# Local .NET Framework reference assemblies used on machines without the developer pack.
+/.framework/
 # CI: packaged release zips
 /dist/
 # Editor / tooling local state

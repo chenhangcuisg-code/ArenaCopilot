@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-08
+
+### Added
+
+- Optional ChatGPT-plan-backed Codex App Server integration with structured JSON responses,
+  persistent per-run threads, account detection, and browser login.
+- Exact visible-state snapshots, stable hashing, conservative local lethal detection, and legal
+  action primitives for turn advice.
+- One-request-per-stable-state planning, automatic plan invalidation after player or random state
+  changes, Codex draft recommendations, and a Chinese in-game advice panel.
+
+### Changed
+
+- Rebranded the fork as Arena Copilot and moved updater/repository links to
+  `chenhangcuisg-code/ArenaCopilot`.
+- Auto-update now defaults off until this fork has a published release channel.
+
 ## [0.1.9] - 2026-08-09
 
 The reference HDT is current again, the committed card pool with it, and the weekly retrain stopped

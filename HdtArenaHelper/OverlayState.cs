@@ -37,11 +37,14 @@ namespace HdtArenaHelper
 		/// identified — which the watcher gates to arena matches — and cleared when they are gone.</summary>
 		internal bool MatchStandings { get; private set; }
 
+		internal bool AdvisorVisible { get; private set; }
+
 		/// <summary>
 		/// Should the overlay window be visible? A screen of ours, OR match standings: the second is what
 		/// keeps the opponent's rank on screen through a game, where no screen of ours exists.
 		/// </summary>
-		internal bool WantVisible(bool dataReady) => dataReady && (ActiveScreen != null || MatchStandings);
+		internal bool WantVisible(bool dataReady)
+			=> (dataReady && (ActiveScreen != null || MatchStandings)) || AdvisorVisible;
 
 		/// <summary>A screen is showing. Replaces whatever was there — one overlay, one screen.</summary>
 		internal void Show(object screen) => ActiveScreen = screen;
@@ -81,12 +84,17 @@ namespace HdtArenaHelper
 
 		internal void OpponentGone() => MatchStandings = false;
 
+		internal void AdvisorShown() => AdvisorVisible = true;
+
+		internal void AdvisorGone() => AdvisorVisible = false;
+
 		/// <summary>Clears everything; for the plugin's (re)enable path, so a stale screen cannot bleed into a
 		/// new session.</summary>
 		internal void Reset()
 		{
 			ActiveScreen = null;
 			MatchStandings = false;
+			AdvisorVisible = false;
 		}
 	}
 }

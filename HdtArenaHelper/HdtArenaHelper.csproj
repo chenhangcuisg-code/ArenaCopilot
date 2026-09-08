@@ -69,10 +69,18 @@
                       LogicalName="HdtArenaHelper.arena_weights.json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <StrategyFile Include="..\Strategy\AGENTS.md" TargetPath="Strategy\AGENTS.md" />
+    <StrategyFile Include="..\Strategy\arena-strategy.md" TargetPath="Strategy\arena-strategy.md" />
+  </ItemGroup>
+
   <!-- After a local (non-CI) build, drop the plugin straight into HDT's Plugins folder. -->
   <Target Name="InstallToHdt" AfterTargets="Build" Condition=" '$(CI)' != 'true' ">
     <Copy SourceFiles="$(TargetDir)HdtArenaHelper.dll"
           DestinationFolder="$(APPDATA)\HearthstoneDeckTracker\Plugins\HdtArenaHelper"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(StrategyFile)"
+          DestinationFiles="@(StrategyFile->'$(APPDATA)\HearthstoneDeckTracker\Plugins\HdtArenaHelper\%(TargetPath)')"
           SkipUnchangedFiles="true" />
   </Target>
 

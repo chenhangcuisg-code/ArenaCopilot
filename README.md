@@ -1,9 +1,9 @@
 <img src="docs/hdt-logo.svg" alt="Hearthstone Deck Tracker" width="80" align="right" />
 
-# HDT Arena Helper
+# Arena Copilot for HDT
 
-[![build](https://github.com/dokson/HdtArenaHelper/actions/workflows/build.yml/badge.svg)](https://github.com/dokson/HdtArenaHelper/actions/workflows/build.yml)
-[![release](https://img.shields.io/github/v/release/dokson/HdtArenaHelper?sort=semver)](https://github.com/dokson/HdtArenaHelper/releases)
+[![build](https://github.com/chenhangcuisg-code/ArenaCopilot/actions/workflows/build.yml/badge.svg)](https://github.com/chenhangcuisg-code/ArenaCopilot/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/chenhangcuisg-code/ArenaCopilot?sort=semver)](https://github.com/chenhangcuisg-code/ArenaCopilot/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Hearthstone Deck Tracker](https://img.shields.io/badge/plugin%20for-Hearthstone%20Deck%20Tracker-2c7ce6)](https://hsreplay.net/)
 
@@ -11,8 +11,33 @@
 [Hearthstone Deck Tracker](https://hsdecktracker.net/) (HDT).**
 During an Arena or Underground Arena draft it reads the three offered cards and shows a
 single blended **0–100 score** for each, right in an overlay over the game — then keeps helping
-*inside* the match, on Discovers and the mulligan. No subscription, no paywalled data, no account,
-no alt-tabbing to a tier list.
+*inside* the match, on Discovers and the mulligan. This fork also adds optional Codex-backed draft
+and turn advice through your locally signed-in ChatGPT account, without an API key.
+
+> **Codex AI is opt-in and consumes your Codex plan quota.** Deterministic board-only lethal is
+> calculated locally. Otherwise the plugin waits for a stable state and normally requests one
+> recommendation per turn; changing the state invalidates the visible plan and can request another.
+> The plugin advises only: it never clicks, plays cards, or sends input to Hearthstone.
+
+## Codex setup
+
+1. Install Codex CLI and run `codex` once, choosing **Sign in with ChatGPT**.
+2. Install the plugin normally, including the bundled `Strategy` folder.
+3. In HDT, open **Plugins → Arena Copilot** and enable
+   **Codex AI advisor (uses plan quota)**.
+4. Use **Codex: sign in / check account** if the HDT log reports no connected account.
+
+The integration launches one long-lived `codex app-server` process, uses ephemeral threads per
+draft/run, requests schema-constrained JSON, and runs Codex with `approvalPolicy=never` and a
+read-only sandbox. No `OPENAI_API_KEY` is read or stored.
+
+Current tactical scope is deliberately conservative: local lethal covers ready board and hero
+attacks only, and the candidate list covers visible attacks plus mana/board-space-filtered card
+plays. Card-specific targeting and random outcomes remain model reasoning, so recommendations are
+advice rather than a proof of full Hearthstone legality.
+
+This project is derived from [dokson/HdtArenaHelper](https://github.com/dokson/HdtArenaHelper) and
+retains its MIT license and data-source safeguards.
 
 It exists to be **a free alternative to the tracker's own freemium arena assistant**, with a
 scoring algorithm of its own: open, documented, and fed by more than one data provider.
@@ -164,7 +189,7 @@ seen is pulled toward the middle instead of asserting a confident number.
 — no HDT binaries are bundled; the plugin binds to yours at runtime.
 
 1. Grab the latest `HdtArenaHelper-<version>.zip` from
-   [Releases](https://github.com/dokson/HdtArenaHelper/releases) — **not** the source zip.
+   [Releases](https://github.com/chenhangcuisg-code/ArenaCopilot/releases) — **not** the source zip.
 2. Extract the `HdtArenaHelper` folder into `%AppData%\HearthstoneDeckTracker\Plugins\`.
 3. In HDT: **Options → Tracker → Plugins**, enable **Arena Helper**.
 4. Start an Arena (or Underground Arena) draft — the overlay appears over the offered
@@ -253,7 +278,7 @@ Not planned: **Battlegrounds**. Every number here is an arena win-rate; BG would
 data source, a different metric (average placement, MMR-conditioned) and a different model — none
 of which this project has, and pretending otherwise is exactly the overclaiming it avoids.
 
-Have an idea or found a bug? Open an [issue](https://github.com/dokson/HdtArenaHelper/issues).
+Have an idea or found a bug? Open an [issue](https://github.com/chenhangcuisg-code/ArenaCopilot/issues).
 
 ## Contributing
 

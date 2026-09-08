@@ -50,8 +50,8 @@ namespace HdtArenaHelper
 	/// </summary>
 	public sealed class SelfUpdater
 	{
-		private const string Owner = "dokson";
-		private const string Repo = "HdtArenaHelper";
+		private const string Owner = "chenhangcuisg-code";
+		private const string Repo = "ArenaCopilot";
 		private const string LatestReleaseApi =
 			"https://api.github.com/repos/" + Owner + "/" + Repo + "/releases/latest";
 		public const string ReleasesPage =

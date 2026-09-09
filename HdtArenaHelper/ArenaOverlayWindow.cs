@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -211,9 +212,32 @@ namespace HdtArenaHelper
 		/// Show or hide the overlay for this tick and keep it glued to the client. Shown only
 		/// when the caller wants it AND the Hearthstone client exists and is not minimised.
 		/// </summary>
+		private IntPtr _gameWindow;
+		private DateTime _nextWindowLookup;
+
+		private IntPtr FindGameWindow()
+		{
+			if(_gameWindow != IntPtr.Zero && IsWindow(_gameWindow))
+				return _gameWindow;
+			_gameWindow = IntPtr.Zero;
+			if(DateTime.UtcNow < _nextWindowLookup)
+				return IntPtr.Zero;
+			_nextWindowLookup = DateTime.UtcNow.AddSeconds(1);
+			// The executable name is stable across locales; the window title is translated.
+			foreach(var process in Process.GetProcessesByName("Hearthstone"))
+			{
+				using(process)
+				{
+					if(_gameWindow == IntPtr.Zero)
+						_gameWindow = process.MainWindowHandle;
+				}
+			}
+			return _gameWindow;
+		}
+
 		public void UpdateVisibility(bool wantVisible)
 		{
-			var hwnd = FindWindow(null, "Hearthstone");
+			var hwnd = FindGameWindow();
 			var show = wantVisible && hwnd != IntPtr.Zero && !IsIconic(hwnd);
 			// Log the transition off OUR OWN flag, not off Visibility: Show() already leaves the
 			// window Visible, so a `Visibility != Visible` check never fired on the first show and
@@ -554,7 +578,7 @@ namespace HdtArenaHelper
 			});
 			stack.Children.Add(new TextBlock
 			{
-				Text = $"{advice.Decision}  ·  {Math.Round(advice.Confidence * 100)}%",
+				Text = $"{advice.Decision}  ·  AI 信心 {Math.Round(advice.Confidence * 100)}%（非胜率）",
 				FontSize = 13,
 				Foreground = Brushes.White,
 				Margin = new Thickness(0, 2, 0, 7),
@@ -564,7 +588,7 @@ namespace HdtArenaHelper
 			if(advice.Reasons.Count > 0)
 			{
 				stack.Children.Add(AdviceLine("理由", Brushes.Silver, 12, 7));
-				foreach(var reason in advice.Reasons.Take(3))
+				foreach(var reason in advice.Reasons.Take(4))
 					stack.Children.Add(AdviceLine("• " + reason, Brushes.Gainsboro, 12));
 			}
 			if(!string.IsNullOrWhiteSpace(advice.Risk))
@@ -1119,8 +1143,7 @@ namespace HdtArenaHelper
 		[StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
 		[StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
 
-		[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-		private static extern IntPtr FindWindow(string? lpClassName, string lpWindowName);
+		[DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
 		[DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 		[DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
 		[DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);

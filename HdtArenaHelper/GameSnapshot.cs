@@ -30,6 +30,7 @@ namespace HdtArenaHelper
 		public int Attack { get; set; }
 		public int Health { get; set; }
 		public bool CanAttack { get; set; }
+		public int AttacksRemaining { get; set; }
 		public bool HasTaunt { get; set; }
 		public bool HasDivineShield { get; set; }
 		public bool IsFrozen { get; set; }
@@ -43,6 +44,7 @@ namespace HdtArenaHelper
 		public int Armor { get; set; }
 		public int HeroAttack { get; set; }
 		public bool CanAttack { get; set; }
+		public int AttacksRemaining { get; set; }
 		public bool IsImmune { get; set; }
 		public int HeroPowerEntityId { get; set; }
 		public int HeroPowerCost { get; set; }

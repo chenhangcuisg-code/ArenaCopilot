@@ -49,18 +49,21 @@ namespace HdtArenaHelper
 			foreach(var attacker in snapshot.FriendlyBoard.Where(x => x.CanAttack && x.Attack > 0))
 			{
 				foreach(var target in targets)
-					result.Add(Attack(attacker.EntityId, attacker.Name, target.EntityId, target.Name));
+					result.Add(Attack(attacker.EntityId, attacker.Name, target.EntityId, target.Name,
+						attacker.AttacksRemaining));
 				if(taunts.Count == 0)
-					result.Add(Attack(attacker.EntityId, attacker.Name, snapshot.Opponent.HeroEntityId, "enemy hero"));
+					result.Add(Attack(attacker.EntityId, attacker.Name, snapshot.Opponent.HeroEntityId, "enemy hero",
+						attacker.AttacksRemaining));
 			}
 
 			if(snapshot.Friendly.CanAttack && snapshot.Friendly.HeroAttack > 0)
 			{
 				foreach(var target in targets)
-					result.Add(Attack(snapshot.Friendly.HeroEntityId, "your hero", target.EntityId, target.Name));
+					result.Add(Attack(snapshot.Friendly.HeroEntityId, "your hero", target.EntityId, target.Name,
+						snapshot.Friendly.AttacksRemaining));
 				if(taunts.Count == 0)
 					result.Add(Attack(snapshot.Friendly.HeroEntityId, "your hero",
-						snapshot.Opponent.HeroEntityId, "enemy hero"));
+						snapshot.Opponent.HeroEntityId, "enemy hero", snapshot.Friendly.AttacksRemaining));
 			}
 
 			if(snapshot.Friendly.HeroPowerAvailable
@@ -79,14 +82,16 @@ namespace HdtArenaHelper
 			return result;
 		}
 
-		private static LegalAction Attack(int sourceId, string source, int targetId, string target)
+		private static LegalAction Attack(int sourceId, string source, int targetId, string target,
+			int attacksRemaining)
 			=> new LegalAction
 			{
 				Id = $"attack:{sourceId}:{targetId}",
 				Kind = LegalActionKind.Attack,
 				SourceEntityId = sourceId,
 				TargetEntityId = targetId,
-				Description = $"[{sourceId}] {source} attacks [{targetId}] {target}",
+				Description = $"[{sourceId}] {source} attacks [{targetId}] {target}"
+					+ (attacksRemaining > 1 ? $" ({attacksRemaining} attacks remain)" : string.Empty),
 			};
 	}
 }

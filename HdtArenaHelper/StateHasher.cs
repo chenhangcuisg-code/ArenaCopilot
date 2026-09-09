@@ -34,10 +34,10 @@ namespace HdtArenaHelper
 		private static string Player(PlayerSnapshot player)
 			=> string.Join(":", player.HeroEntityId, player.Class, player.Health, player.Armor,
 				player.HeroAttack, player.CanAttack, player.IsImmune, player.HeroPowerEntityId, player.HeroPowerCost,
-				player.HeroPowerAvailable, player.HandSize, player.DeckSize, player.SecretCount);
+				player.HeroPowerAvailable, player.HandSize, player.DeckSize, player.SecretCount, player.AttacksRemaining);
 
 		private static string Minion(MinionSnapshot minion)
 			=> string.Join(":", minion.EntityId, minion.CardId, minion.Attack, minion.Health,
-				minion.CanAttack, minion.HasTaunt, minion.HasDivineShield, minion.IsFrozen);
+				minion.CanAttack, minion.HasTaunt, minion.HasDivineShield, minion.IsFrozen, minion.AttacksRemaining);
 	}
 }

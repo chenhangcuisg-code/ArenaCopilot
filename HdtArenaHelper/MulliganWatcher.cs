@@ -22,14 +22,16 @@ namespace HdtArenaHelper
 		/// mulligan. A rule beats a field read that could fail.
 		/// </summary>
 		public bool OnCoin { get; }
+		public bool IsPractice { get; }
 
 		public MulliganEventArgs(IReadOnlyList<int> handDbfIds, HearthDb.Enums.CardClass deckClass,
-			IReadOnlyList<int> deckDbfIds, bool onCoin)
+			IReadOnlyList<int> deckDbfIds, bool onCoin, bool isPractice = false)
 		{
 			HandDbfIds = handDbfIds;
 			DeckClass = deckClass;
 			DeckDbfIds = deckDbfIds;
 			OnCoin = onCoin;
+			IsPractice = isPractice;
 		}
 	}
 
@@ -37,8 +39,8 @@ namespace HdtArenaHelper
 	/// Detects the mulligan screen and reports the opening hand, so the overlay can show each card's
 	/// keep record for the drafted class.
 	///
-	/// Gated exactly like <see cref="CardChoiceWatcher"/>: the scene must be GAMEPLAY and the player
-	/// must be in an ARENA run, because the keep statistics are arena statistics. Ordering is by the
+	/// The scene must be GAMEPLAY in arena or practice. Practice uses the selected deck without
+	/// arena keep statistics. Ordering is by the
 	/// client's own <c>ZonePosition</c> rather than by the order the list happens to arrive in — the
 	/// overlay places one column per card, so a wrong order puts each number over the wrong card.
 	/// </summary>
@@ -49,28 +51,52 @@ namespace HdtArenaHelper
 
 		private string? _lastSignature;
 		private bool _showing;
+		private Deck? _practiceDeck;
 
 		protected override SceneMode Scene => SceneMode.GAMEPLAY;
 
-		/// <summary>Keep statistics are arena statistics; an arena run being open is not an arena game.</summary>
+		/// <summary>Exclude unrelated modes; practice is explicitly allowed below.</summary>
 		protected override bool ArenaMatchOnly => true;
+		protected override bool AllowPracticeMatches => true;
 
-		protected override void OnSceneLeft() => Clear();
+		protected override void OnSceneLeft()
+		{
+			_practiceDeck = null;
+			Clear();
+		}
 
 		public override void Reset()
 		{
 			base.Reset();
 			_lastSignature = null;
 			_showing = false;
+			_practiceDeck = null;
 		}
 
 		protected override void PollCore()
 		{
 			var state = Reflection.Client.GetMulliganState();
-			var arenaInfo = Reflection.Client.GetArenaDeck();
+			if(state?.MulliganCards == null || !state.MulliganCards.Any())
+			{
+				Clear();
+				return;
+			}
+			var isPractice = (HearthDb.Enums.GameType)Reflection.Client.GetGameType() == HearthDb.Enums.GameType.GT_VS_AI;
+			Deck? deck;
+			if(isPractice)
+			{
+				if(_practiceDeck == null)
+				{
+					var selectedId = Reflection.Client.GetSelectedDeckInMenu();
+					_practiceDeck = Reflection.Client.GetDecks()?.FirstOrDefault(d => d.Id == selectedId);
+				}
+				deck = _practiceDeck;
+			}
+			else
+				deck = Reflection.Client.GetArenaDeck()?.Deck;
 
-			var plan = BuildMulliganPlan(state?.MulliganCards, arenaInfo?.Deck?.Hero,
-				arenaInfo?.Deck?.HeroPower, arenaInfo?.Deck?.Cards);
+			var plan = BuildMulliganPlan(state.MulliganCards, deck?.Hero,
+				deck?.HeroPower, deck?.Cards, isPractice);
 			if(plan == null)
 			{
 				Clear();
@@ -107,7 +133,7 @@ namespace HdtArenaHelper
 		/// instead of freezing a half-built hand.
 		/// </summary>
 		internal static MulliganPlan? BuildMulliganPlan(IEnumerable<MulliganState.MulliganCard>? cards,
-			string? hero, string? heroPower, IEnumerable<Card>? deckCards)
+			string? hero, string? heroPower, IEnumerable<Card>? deckCards, bool isPractice = false)
 		{
 			if(cards == null)
 				return null;
@@ -141,7 +167,7 @@ namespace HdtArenaHelper
 			// the count is the only thing that says which side of the turn order this is.
 			var onCoin = hand.Count >= 4;
 
-			return new MulliganPlan(new MulliganEventArgs(hand, deckClass, deck, onCoin),
+			return new MulliganPlan(new MulliganEventArgs(hand, deckClass, deck, onCoin, isPractice),
 				string.Join(",", hand));
 		}
 

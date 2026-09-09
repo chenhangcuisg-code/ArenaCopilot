@@ -72,6 +72,7 @@
   <ItemGroup>
     <StrategyFile Include="..\Strategy\AGENTS.md" TargetPath="Strategy\AGENTS.md" />
     <StrategyFile Include="..\Strategy\arena-strategy.md" TargetPath="Strategy\arena-strategy.md" />
+    <StrategyFile Include="..\Strategy\personal-strategy.template.md" TargetPath="Strategy\personal-strategy.template.md" />
   </ItemGroup>
 
   <!-- After a local (non-CI) build, drop the plugin straight into HDT's Plugins folder. -->

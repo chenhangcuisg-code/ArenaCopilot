@@ -21,6 +21,17 @@ and turn advice through your locally signed-in ChatGPT account, without an API k
 
 ## Codex setup
 
+The advisor defaults to `gpt-5.6-sol` with `medium` reasoning. Arena draft requests include
+the full chosen deck, card text, duplicate counts, and the curve/removal/draw structure before
+and after each complete offered package. Chinese explanations compare all three options and
+state existing synergies, deck gaps, reliability, and opportunity cost. Local scores retain their
+existing algorithm; neither those scores nor AI confidence represent a predicted deck win rate.
+
+Mulligan and play advice also support practice games against the innkeeper. Practice mulligans
+use the selected deck without applying arena win-rate scores. Game-window detection supports
+localized Hearthstone titles. The Codex transport explicitly writes UTF-8 when hosted by HDT.
+These features recommend actions; they do not operate the game or guarantee improved win rates.
+
 1. Install Codex CLI and run `codex` once, choosing **Sign in with ChatGPT**.
 2. Install the plugin normally, including the bundled `Strategy` folder.
 3. In HDT, open **Plugins → Arena Copilot** and enable
@@ -35,6 +46,13 @@ Current tactical scope is deliberately conservative: local lethal covers ready b
 attacks only, and the candidate list covers visible attacks plus mana/board-space-filtered card
 plays. Card-specific targeting and random outcomes remain model reasoning, so recommendations are
 advice rather than a proof of full Hearthstone legality.
+
+Turn advice now includes locally computed tactical facts (effective health, ready attack damage,
+visible opposing board attack, taunts, lethal gap, and board/hand capacity) plus two persistent local
+files under `%AppData%\HearthstoneDeckTracker\ArenaCopilot`: `personal-strategy.md` controls the
+player's preferred style, and `strategy-lessons.md` carries concrete corrections from reviewed games.
+Both are re-read for every recommendation, so they can be edited while HDT is running. They stay on
+the machine and are never included in releases or repository updates.
 
 This project is derived from [dokson/HdtArenaHelper](https://github.com/dokson/HdtArenaHelper) and
 retains its MIT license and data-source safeguards.

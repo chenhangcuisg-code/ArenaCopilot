@@ -38,6 +38,7 @@ namespace HdtArenaHelper
 		/// the choice watcher scored it and painted arena win-rates over a Battlegrounds board.
 		/// </summary>
 		protected virtual bool ArenaMatchOnly => false;
+		protected virtual bool AllowPracticeMatches => false;
 
 		/// <summary>Read the client and fire events. Exceptions are handled by the template.</summary>
 		protected abstract void PollCore();
@@ -157,7 +158,7 @@ namespace HdtArenaHelper
 				return true;
 			}
 
-			if(IsArenaGameType(gameType))
+			if(IsSupportedMatch(gameType, AllowPracticeMatches))
 			{
 				_blockedGameTypeLogged = -1;
 				return true;
@@ -178,6 +179,9 @@ namespace HdtArenaHelper
 		/// a brawl — is a match whose cards this plugin has no win-rate for. An id HearthDb does not
 		/// know is treated as non-arena: a future mode is not arena until someone here says it is.
 		/// </summary>
+		internal static bool IsSupportedMatch(int gameType, bool allowPractice)
+			=> IsArenaGameType(gameType) || (allowPractice && (HearthDb.Enums.GameType)gameType == HearthDb.Enums.GameType.GT_VS_AI);
+
 		internal static bool IsArenaGameType(int gameType)
 		{
 			switch((HearthDb.Enums.GameType)gameType)

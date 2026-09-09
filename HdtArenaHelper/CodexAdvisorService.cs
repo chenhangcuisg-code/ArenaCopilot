@@ -13,13 +13,21 @@ namespace HdtArenaHelper
 			= new ConcurrentDictionary<string, Lazy<Task<string>>>();
 		private readonly string? _model;
 		private readonly string _effort;
+		private readonly PersonalStrategyStore _personalStrategy;
 
-		internal CodexAdvisorService(string strategyDirectory, string? model = null, string effort = "medium")
+		internal CodexAdvisorService(string strategyDirectory, string? personalStrategyDirectory = null,
+			string? model = "gpt-5.6-sol", string effort = "medium")
 		{
 			_client = new CodexAppServerClient(strategyDirectory);
+			_personalStrategy = new PersonalStrategyStore(personalStrategyDirectory ?? strategyDirectory,
+				strategyDirectory);
+			_personalStrategy.EnsureFiles();
 			_model = model;
 			_effort = effort;
 		}
+
+		internal string PersonalStrategyPath => _personalStrategy.ProfilePath;
+		internal string StrategyLessonsPath => _personalStrategy.LessonsPath;
 
 		internal Task<CodexAccount?> ReadAccountAsync() => _client.ReadAccountAsync();
 
@@ -34,7 +42,8 @@ namespace HdtArenaHelper
 			IReadOnlyList<LegalAction> actions)
 		{
 			var thread = await ThreadAsync("game:" + snapshot.GameId).ConfigureAwait(false);
-			var json = await _client.RunTurnAsync(thread, PromptBuilder.Play(snapshot, actions), _effort)
+			var json = await _client.RunTurnAsync(thread,
+				PromptBuilder.Play(snapshot, actions, _personalStrategy.Read()), _effort)
 				.ConfigureAwait(false);
 			return AdvisorResponse.Parse(json);
 		}

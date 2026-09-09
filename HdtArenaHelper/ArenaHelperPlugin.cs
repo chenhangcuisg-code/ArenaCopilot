@@ -484,6 +484,14 @@ namespace HdtArenaHelper
 				login.Click += async (_, __) => await CheckCodexAccountAsync().ConfigureAwait(true);
 				_menuItem.Items.Add(login);
 
+				var personalStrategy = new MenuItem { Header = "Edit personal play strategy" };
+				personalStrategy.Click += (_, __) => OpenStrategyFile(lessons: false);
+				_menuItem.Items.Add(personalStrategy);
+
+				var strategyLessons = new MenuItem { Header = "Edit strategy lessons" };
+				strategyLessons.Click += (_, __) => OpenStrategyFile(lessons: true);
+				_menuItem.Items.Add(strategyLessons);
+
 				// Read the pref before building the checkbox, for the same reason auto-update does:
 				// the menu can be built before OnLoad, and a checkbox showing the default instead of
 				// the saved choice is a lie about what the plugin is doing.
@@ -1579,6 +1587,8 @@ namespace HdtArenaHelper
 			// would be a second opinion nobody validated.
 			_mulliganAdvisor.SetScoreSource(dbfId =>
 			{
+				if(e.IsPractice)
+					return null;
 				var blended = aggregator.Score(dbfId, e.DeckDbfIds, e.DeckClass);
 				// A low-confidence score is worse than none here: the advisor uses it to decide
 				// whether an expensive card is a bomb worth holding, and a thinly-sampled legendary
@@ -1859,7 +1869,7 @@ namespace HdtArenaHelper
 					Directory.CreateDirectory(CacheDir);
 					strategyDir = CacheDir;
 				}
-				_codex = new CodexAdvisorService(strategyDir);
+				_codex = new CodexAdvisorService(strategyDir, CacheDir);
 				_playAdvisor = new PlayAdvisor(_codex);
 				_playAdvisor.AdviceReady += OnPlayAdviceReady;
 				_playAdvisor.AdviceGone += OnPlayAdviceGone;
@@ -1892,6 +1902,25 @@ namespace HdtArenaHelper
 			}
 		}
 
+		private void OpenStrategyFile(bool lessons)
+		{
+			InitCodexAdvisor();
+			if(_codex == null)
+				return;
+			var path = lessons ? _codex.StrategyLessonsPath : _codex.PersonalStrategyPath;
+			try
+			{
+				System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+				{
+					UseShellExecute = true,
+				});
+			}
+			catch(Exception ex)
+			{
+				Log.Error("[ArenaHelper] could not open personal strategy file: " + ex.Message);
+			}
+		}
+
 		private void OnPlayAdviceReady(object sender, PlayAdviceEventArgs e)
 		{
 			_overlay?.SetAdvisor(e.Advice, e.Advice.IsLocalLethal ? "LOCAL LETHAL" : "CODEX — PLAY");
@@ -1921,6 +1950,9 @@ namespace HdtArenaHelper
 				{
 					Id = ((char)('A' + i)).ToString(),
 					DbfId = choices.Offered[i].DbfId,
+					PackageDbfIds = choices.Offered[i].PackageDbfIds,
+					HasScoreData = entries[i].Score.HasData,
+					IsLowConfidence = entries[i].Score.IsLowConfidence,
 					Name = entries[i].Label,
 					Score = entries[i].Score.HasData ? entries[i].Score.Value : 0,
 					DeckFit = entries[i].Score.SynergyBonus,

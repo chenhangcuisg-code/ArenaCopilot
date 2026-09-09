@@ -115,11 +115,13 @@ namespace HdtArenaHelper
 				return true;
 			}
 
-			internal void Reset()
+			internal bool Reset()
 			{
+				var wasShowing = _showing;
 				_signature = null;
 				_showing = false;
 				_missed = 0;
+				return wasShowing;
 			}
 		}
 
@@ -274,8 +276,8 @@ namespace HdtArenaHelper
 		/// </summary>
 		private void Clear()
 		{
-			_gate.Reset();
-			OnChoicesGone?.Invoke(this, EventArgs.Empty);
+			if(_gate.Reset())
+				OnChoicesGone?.Invoke(this, EventArgs.Empty);
 		}
 
 	}

@@ -49,6 +49,7 @@ namespace HdtArenaHelper
 				Armor = Math.Max(0, hero.GetTag(GameTag.ARMOR)),
 				HeroAttack = Math.Max(0, hero.Attack),
 				CanAttack = CanAttack(hero),
+				AttacksRemaining = RemainingAttacks(hero),
 				IsImmune = hero.GetTag(GameTag.IMMUNE) > 0,
 				HeroPowerEntityId = heroPower?.Id ?? 0,
 				HeroPowerCost = heroPower == null ? 0 : Math.Max(0, heroPower.Cost),
@@ -82,21 +83,25 @@ namespace HdtArenaHelper
 				Attack = Math.Max(0, entity.Attack),
 				Health = Math.Max(0, entity.Health),
 				CanAttack = CanAttack(entity),
+				AttacksRemaining = RemainingAttacks(entity),
 				HasTaunt = entity.GetTag(GameTag.TAUNT) > 0,
 				HasDivineShield = entity.GetTag(GameTag.DIVINE_SHIELD) > 0,
 				IsFrozen = entity.GetTag(GameTag.FROZEN) > 0,
 			};
 
-		private static bool CanAttack(Entity entity)
+		private static int RemainingAttacks(Entity entity)
 		{
 			var maxAttacks = entity.GetTag(GameTag.MEGA_WINDFURY) > 0 ? 4
 				: entity.GetTag(GameTag.WINDFURY) > 0 ? 2 : 1;
-			return entity.IsInPlay && entity.Attack > 0
-				&& entity.GetTag(GameTag.EXHAUSTED) == 0
-				&& entity.GetTag(GameTag.FROZEN) == 0
-				&& entity.GetTag(GameTag.CANT_ATTACK) == 0
-				&& entity.GetTag(GameTag.NUM_ATTACKS_THIS_TURN) < maxAttacks;
+			if(!entity.IsInPlay || entity.Attack <= 0
+				|| entity.GetTag(GameTag.EXHAUSTED) > 0
+				|| entity.GetTag(GameTag.FROZEN) > 0
+				|| entity.GetTag(GameTag.CANT_ATTACK) > 0)
+				return 0;
+			return Math.Max(0, maxAttacks - entity.GetTag(GameTag.NUM_ATTACKS_THIS_TURN));
 		}
+
+		private static bool CanAttack(Entity entity) => RemainingAttacks(entity) > 0;
 
 		private static CardKind Kind(CardType type)
 		{

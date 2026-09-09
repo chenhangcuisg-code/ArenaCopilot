@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,7 @@ namespace HdtArenaHelper
 
 	internal sealed class CodexAppServerClient : IDisposable
 	{
+		private static readonly object ProcessStartLock = new object();
 		private readonly string _workingDirectory;
 		private readonly SemaphoreSlim _turnLock = new SemaphoreSlim(1, 1);
 		private readonly ConcurrentDictionary<long, TaskCompletionSource<JObject>> _requests
@@ -41,16 +43,15 @@ namespace HdtArenaHelper
 			if(_process != null && !_process.HasExited)
 				return;
 
-			var nativeCli = Path.Combine(
+			var nativeCli = CodexExecutableResolver.Find(
 				Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-				"npm", "node_modules", "@openai", "codex", "node_modules", "@openai",
-				"codex-win32-x64", "vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe");
-			var useNativeCli = File.Exists(nativeCli);
+				Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), File.Exists);
+			var useNativeCli = nativeCli != null;
 			var fileCredentials = File.Exists(Path.Combine(
 				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json"));
 			var start = new ProcessStartInfo
 			{
-				FileName = useNativeCli ? nativeCli : "cmd.exe",
+				FileName = useNativeCli ? nativeCli! : "cmd.exe",
 				Arguments = useNativeCli
 					? (fileCredentials ? "-c cli_auth_credentials_store=file app-server" : "app-server")
 					: "/d /s /c \"codex app-server\"",
@@ -63,13 +64,29 @@ namespace HdtArenaHelper
 				StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
 				StandardErrorEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
 			};
-			_process = Process.Start(start) ?? throw new InvalidOperationException("Could not start codex app-server.");
-			// .NET Framework's redirected stdin writer emits a UTF-8 BOM. The app-server
-			// treats that BOM as part of the first NDJSON message, so terminate that
-			// preamble as an intentionally empty line before sending initialize.
-			_input = _process.StandardInput;
-			_input.WriteLine();
-			_input.Flush();
+			lock(ProcessStartLock)
+			{
+				// net472 has no ProcessStartInfo.StandardInputEncoding. Its process
+				// launcher reads this managed cache; Console.InputEncoding's setter
+				// cannot be used in HDT because a GUI process has no console handle.
+				var encodingField = typeof(Console).GetField("_inputEncoding", BindingFlags.Static | BindingFlags.NonPublic)
+					?? throw new NotSupportedException("Cannot configure UTF-8 subprocess input on this runtime.");
+				var previousEncoding = encodingField.GetValue(null);
+				try
+				{
+					// Framework creates and flushes the stdin writer inside Process.Start,
+					// so selecting UTF-8 afterwards is too late to prevent a UTF-16 BOM.
+					encodingField.SetValue(null, new UTF8Encoding(false));
+					_process = Process.Start(start) ?? throw new InvalidOperationException("Could not start codex app-server.");
+				}
+				finally
+				{
+					encodingField.SetValue(null, previousEncoding);
+				}
+			}
+			// HDT can use UTF-16 as its console input encoding. Process.StandardInput
+			// inherits that encoding on .NET Framework, but JSONL requires UTF-8.
+			_input = new StreamWriter(_process.StandardInput.BaseStream, new UTF8Encoding(false));
 			_ = Task.Run(() => ReadLoop(_process.StandardOutput));
 			_ = Task.Run(() => DrainErrors(_process.StandardError));
 
@@ -237,8 +254,6 @@ namespace HdtArenaHelper
 			string? line;
 			while((line = await errors.ReadLineAsync().ConfigureAwait(false)) != null)
 			{
-				if(line.Contains("Failed to deserialize JSONRPCMessage: expected value at line 1 column 1"))
-					continue;
 				_lastError = line;
 			}
 		}
